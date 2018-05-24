@@ -1,5 +1,5 @@
 lab3a: lab3a.c ext2_fs.h
-	gcc -o lab3a -Wall -Wextra lab3a.c
+	gcc -o lab3a -Wall -Wextra lab3a.c -lm
 
 .PHONY: clean
 clean:
