@@ -38,6 +38,10 @@ int print_superblock_summary(struct ext2_super_block *sb) {
     return 0;
 }
 
+void print_group_summary() {
+
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 2) {
         fprintf(stderr, "Invalid invocation!\nUsage: ./lab3a [image]\n");
@@ -49,4 +53,6 @@ int main(int argc, char *argv[]) {
 
     struct ext2_super_block sb;
     pread(img_fd, &sb, sizeof(struct ext2_super_block), 1024);
+
+    struct ext_group_desc grps[100];
 }
