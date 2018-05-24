@@ -97,9 +97,15 @@ int main(int argc, char *argv[]) {
     struct ext2_super_block super_block;
     pread(img_fd, &super_block, sizeof(struct ext2_super_block), SUPER_BLOCK_OFFSET);
 
+    /* Call print_superblock_summary */
+
     int block_size = super_block.s_log_block_size;
     double group_count = ceil((double) super_block.s_blocks_count / (double) super_block.s_blocks_per_group);
 
     struct ext2_group_desc grps[(int) group_count];
     pread(img_fd, grps, sizeof(struct ext2_group_desc) * group_count, SUPER_BLOCK_OFFSET + block_size);
+
+    /* Call print_group_summary */
+
+    
 }
