@@ -71,13 +71,12 @@ void print_group_summary(struct ext2_super_block *sb, struct ext2_group_desc grp
    int free_inode_bitmap;
    int first_inode_block;
 
-   for (int i = 0; i < group_count; i++){
+   for (int i = 0; i < group_count; i++) {
        group_num = i;
        if (i != group_count - 1) {
            blocks_in_group = sb->s_blocks_per_group;
            inodes_in_group = sb->s_inodes_per_group;
-       }
-       else {
+       } else {
            blocks_in_group = sb->s_blocks_count % sb->s_blocks_per_group;
            inodes_in_group = sb->s_inodes_count % sb->s_inodes_per_group;
        }
@@ -125,6 +124,44 @@ void print_free_block_entries(int img_fd, struct ext2_super_block *sb, struct ex
 
         free(bitmap);
     }
+}
+
+/* Print free inode summary for each group
+ * IFREE
+ * number of the free I-node (decimal)
+ */
+void print_free_inode_entries(int img_fd, struct ext2_super_block *sb, struct ext2_group_desc grps[], int group_count) {
+    int inode_bitmap;
+    int inodes_in_group;
+    int block_size = EXT2_MIN_BLOCK_SIZE << sb->s_log_block_size;
+
+    for (int i = 0; i < group_count; i++) {
+        inode_bitmap = grps[i].bg_inode_bitmap;
+        if (i != group_count - 1) {
+            inodes_in_group = sb->s_inodes_per_group;
+        } else {
+            inodes_in_group = sb->s_inodes_count % sb->s_inodes_per_group;
+        }
+
+        int *bitmap = malloc(block_size);
+        int offset = get_offset(inode_bitmap, block_size);
+        pread(img_fd, bitmap, block_size, offset);
+
+        for (int j = 0; j < inodes_in_group; j++) {
+            int is_allocated = *bitmap & (1 << j);
+            if (!is_allocated) {
+                int inode_id = (i * sb->s_inodes_per_group) + j;
+                printf("IFREE,%d\n", inode_id);
+            }
+        }
+
+        free(bitmap);
+    }
+}
+
+void print_inode_summary(struct ext2_super_block *sb, struct ext2_group_desc grps[], int group_conut) {
+    // iterate through each valid corresponding inode and output its summary
+    // essentially the same thing as the print_free_inode_entries, except you calculate the position of the inode
 }
 
 int main(int argc, char *argv[]) {
