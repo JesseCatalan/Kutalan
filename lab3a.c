@@ -92,8 +92,7 @@ void print_group_summary(struct ext2_super_block *sb, struct ext2_group_desc grp
                free_inode_bitmap, first_inode_block);
    }
 }
-/*
- * Print free block entries:
+/* Print free block entries:
  * BFREE
  * number of the free block (decimal)
  */
