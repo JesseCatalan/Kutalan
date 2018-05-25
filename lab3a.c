@@ -9,6 +9,15 @@
 
 #define SUPER_BLOCK_OFFSET 1024
 
+int get_offset(int block_id, int block_size) {
+    /* NOTE: Blocks are indexed starting from 1.
+     * The initial block is reserved for the boot block.
+     */
+    int offset = SUPER_BLOCK_OFFSET + (block_id - 1) * block_size;
+
+    return offset;
+}
+
 /* Print summary of superblock:
  * SUPERBLOCK
  * total number of blocks (decimal)
@@ -84,6 +93,39 @@ void print_group_summary(struct ext2_super_block *sb, struct ext2_group_desc grp
                free_inode_bitmap, first_inode_block);
    }
 }
+/*
+ * Print free block entries:
+ * BFREE
+ * number of the free block (decimal)
+ */
+void print_free_block_entries(int img_fd, struct ext2_super_block *sb, struct ext2_group_desc grps[], int group_count) {
+    int block_bitmap;
+    int blocks_in_group;
+    int block_size = EXT2_MIN_BLOCK_SIZE << sb->s_log_block_size;
+
+    for (int i = 0; i < group_count; i++) {
+        block_bitmap = grps[i].bg_block_bitmap;
+        if (i != group_count - 1) {
+            blocks_in_group = sb->s_blocks_per_group;
+        } else {
+            blocks_in_group = sb->s_blocks_count % sb->s_blocks_per_group;
+        }
+
+        int *bitmap = malloc(block_size);
+        int offset = get_offset(block_bitmap, block_size);
+        pread(img_fd, bitmap, block_size, offset);
+
+        for (int j = 0; j < blocks_in_group; j++) {
+            int is_allocated = *bitmap & (1 << j);
+            if (!is_allocated) {
+                int block_id = (i * sb->s_blocks_per_group) + j;
+                printf("BFREE,%d\n", block_id);
+            }
+        }
+
+        free(bitmap);
+    }
+}
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
@@ -103,7 +145,8 @@ int main(int argc, char *argv[]) {
     double group_count = ceil((double) super_block.s_blocks_count / (double) super_block.s_blocks_per_group);
 
     struct ext2_group_desc grps[(int) group_count];
-    pread(img_fd, grps, sizeof(struct ext2_group_desc) * group_count, SUPER_BLOCK_OFFSET + block_size);
+    int grp_desc_table_offset = get_offset(2, block_size);
+    pread(img_fd, grps, sizeof(struct ext2_group_desc) * group_count, grp_desc_table_offset);
 
     /* Call print_group_summary */
 
