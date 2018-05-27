@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <math.h>
+#include <string.h>
 #include "ext2_fs.h"
 
 #define SUPER_BLOCK_OFFSET 1024
@@ -162,6 +163,209 @@ void print_inode_summary(struct ext2_super_block *sb, struct ext2_group_desc grp
     // iterate through each valid corresponding inode and output its summary
     // essentially the same thing as the print_free_inode_entries, except you calculate the position of the inode
 }
+
+/* Iterate through directory entries of a data block */
+void scan_dir(int img_fd, int block_id, int block_size, int inode_id, int lbo) {
+    char block[block_size];
+    int offset = get_offset(block_id, block_size);
+    pread(img_fd, block, block_size, offset);
+
+    struct ext2_dir_entry *dirent = (struct ext2_dir_entry *) block;
+    int size = 0;
+    while (size < block_size) {
+        if (dirent->inode != 0) {
+            int name_len = dirent->name_len;
+            char name[name_len + 1];
+            memcpy(name, dirent->name, name_len);
+            name[name_len] = '\0';
+
+            printf("DIRENT,%d,%d,%d,%d,%d,'%s'\n",
+                    inode_id, lbo, dirent->inode,
+                    dirent->rec_len, name_len, name);
+        }
+
+        dirent = (void *) dirent + dirent->rec_len;
+        size += dirent->rec_len;
+    }
+
+}
+
+/* Visit indirect directory entries */
+void visit_indirect_dirents(int level, int block_id, int block_size, int num_entries,
+        int img_fd, int inode_id, int lbo) {
+    char block[block_size];
+    int offset = get_offset(block_id, block_size);
+    pread(img_fd, block, block_size, offset);
+
+    int *ptr = (int *) block;
+
+    if (level == 1) {
+        for (int i = 0; i < num_entries; i++) {
+            scan_dir(img_fd, *ptr, block_size, inode_id, lbo + i);
+            ptr++;
+        }   
+        return;
+    }
+    
+    for (int i = 0; i < num_entries; i++) {
+        visit_indirect_dirents(level - 1, *ptr, block_size, num_entries,
+                img_fd, inode_id, lbo);
+        lbo += num_entries;
+        ptr++;
+    }
+}
+
+/* Print directory entry summary:
+ * DIRENT
+ * parent inode number (decimal) ... the I-node number of the directory that contains this entry
+ * logical byte offset (decimal) of this entry within the directory
+ * inode number of the referenced file (decimal)
+ * entry length (decimal)
+ * name length (decimal)
+ * name (string, surrounded by single-quotes). Don't worry about escaping, we promise there will be no single-quotes or commas in any of the file names.
+ */
+void print_dir_entries(int img_fd, struct ext2_super_block *sb,
+        struct ext2_group_desc grps[], int group_count) {
+    int inodes_in_group;
+    int inode_table;
+    struct ext2_inode table[sb->s_inodes_per_group];
+    int block_size = EXT2_MIN_BLOCK_SIZE << sb->s_log_block_size;
+
+    /* Number of 32-bit block pointers in a block */
+    /* NOTE: block size is in bytes */
+    int num_entries = (block_size * 8) / 32;
+
+    for (int i = 0; i < group_count; i++) {
+        inode_table = grps[i].bg_inode_table;
+        if (i != group_count - 1) {
+            inodes_in_group = sb->s_inodes_per_group;
+
+        } else {
+            inodes_in_group = sb->s_inodes_count % sb->s_inodes_per_group;
+        }
+
+        int table_offset = get_offset(inode_table, block_size);
+        pread(img_fd, table, sizeof(table), table_offset);
+
+        for (int j = 0; j < inodes_in_group; j++) {
+            int inode_id = (i * sb->s_inodes_per_group) + j; 
+            struct ext2_inode *inode_entry = &table[j];
+            if (S_ISDIR(inode_entry->i_mode)) {
+                int lbo = 0;
+                for (int k = 0; k < 15; k++) {
+                    int ptr = inode_entry->i_block[k];
+                    if (k < 12) {
+                        scan_dir(img_fd, ptr, block_size, inode_id, lbo);
+                        lbo++;
+                    } if (k == 12) {
+                        visit_indirect_dirents(1, ptr, block_size, num_entries,
+                                img_fd, inode_id, lbo);
+                        lbo += num_entries;
+                    } else if (k == 13) {
+                        visit_indirect_dirents(2, ptr, block_size, num_entries,
+                                img_fd, inode_id, lbo);
+                        lbo += num_entries * num_entries;
+                    } else if (k == 14) {
+                        visit_indirect_dirents(3, ptr, block_size, num_entries,
+                                img_fd, inode_id, lbo);
+                        lbo += num_entries * num_entries * num_entries;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* Visit indirect blocks */
+void visit_indirect_refs(int level_current, int level_original, int block_id,
+            int block_size, int num_entries, int img_fd,
+            int inode_id, int lbo) {
+    char block[block_size];
+    int offset = get_offset(block_id, block_size);
+    pread(img_fd, block, block_size, offset);
+
+    int *ptr = (int *) block;
+
+    if (level_current == 1) {
+        for (int i = 0; i < num_entries; i++) {
+            if (*ptr) {
+                printf("INDIRECT,%d,%d,%d,%d,%d",
+                        inode_id, level_original, lbo + i,
+                        block_id, *ptr);
+            }
+            ptr++;
+        }   
+        return;
+    }
+    
+    for (int i = 0; i < num_entries; i++) {
+        if (*ptr) {
+            printf("INDIRECT,%d,%d,%d,%d,%d",
+                    inode_id, level_original, lbo,
+                    block_id, *ptr);
+        }
+        visit_indirect_refs(level_current - 1, level_original, *ptr, block_size,
+                num_entries, img_fd, inode_id, lbo);
+        lbo += num_entries;
+        ptr++;
+    }
+}
+
+/* Print indirect block references:
+ * INDIRECT
+ * I-node number of the owning file (decimal)
+ * (decimal) level of indirection for the block being scanned ... 1 for single indirect, 2 for double indirect, 3 for triple
+ * logical block offset (decimal) represented by the referenced block. If the referenced block is a data block, this is the logical block offset of that block within the file. If the referenced block is a single- or double-indirect block, this is the same as the logical offset of the first data block to which it refers.
+ * block number of the (1, 2, 3) indirect block being scanned (decimal) . . . not the highest level block (in the recursive scan), but the lower level block that contains the block reference reported by this entry.
+ * block number of the referenced block (decimal)
+ */
+void print_indirect_block_refs(int img_fd, struct ext2_super_block *sb,
+        struct ext2_group_desc grps[], int group_count) {
+    int inodes_in_group;
+    int inode_table;
+    struct ext2_inode table[sb->s_inodes_per_group];
+    int block_size = EXT2_MIN_BLOCK_SIZE << sb->s_log_block_size;
+
+    /* Number of 32-bit block pointers in a block */
+    /* NOTE: block size is in bytes */
+    int num_entries = (block_size * 8) / 32;
+
+    for (int i = 0; i < group_count; i++) {
+        inode_table = grps[i].bg_inode_table;
+        if (i != group_count - 1) {
+            inodes_in_group = sb->s_inodes_per_group;
+
+        } else {
+            inodes_in_group = sb->s_inodes_count % sb->s_inodes_per_group;
+        }
+
+        int table_offset = get_offset(inode_table, block_size);
+        pread(img_fd, table, sizeof(table), table_offset);
+
+        for (int j = 0; j < inodes_in_group; j++) {
+            int inode_id = (i * sb->s_inodes_per_group) + j; 
+            struct ext2_inode *inode_entry = &table[j];
+            int lbo = 12;
+            if (S_ISDIR(inode_entry->i_mode) || S_ISREG(inode_entry->i_mode)) {
+                /* Scan indirect blocks */ 
+                visit_indirect_refs(1, 1, inode_entry->i_block[12], block_size,
+                        num_entries, img_fd, inode_id, lbo);
+                lbo += num_entries;
+
+                /* Scan double indirect blocks */
+                visit_indirect_refs(2, 2, inode_entry->i_block[13], block_size,
+                        num_entries, img_fd, inode_id, lbo);
+                lbo += num_entries * num_entries;
+
+                /* Scan triple indirect blocks */
+                visit_indirect_refs(3, 3, inode_entry->i_block[14], block_size,
+                        num_entries, img_fd, inode_id, lbo);
+                lbo += num_entries * num_entries * num_entries;
+            }
+        }
+    }
+}
+
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
