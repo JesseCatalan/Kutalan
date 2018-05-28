@@ -316,6 +316,11 @@ void scan_dir(int img_fd, int block_id, int block_size, int inode_id, int lbo) {
         }
 
         dirent = (void *) dirent + dirent->rec_len;
+
+        if (dirent->rec_len == 0) {
+            break;
+        }
+
         size += dirent->rec_len;
     }
 
@@ -359,7 +364,7 @@ void print_dir_entries(int img_fd, struct ext2_super_block *sb,
         struct ext2_group_desc *grp) {
     int inodes_in_group;
     int inode_table;
-    struct ext2_inode table[sb->s_inodes_per_group];
+    struct ext2_inode table[sb->s_inodes_count];
     int block_size = EXT2_MIN_BLOCK_SIZE << sb->s_log_block_size;
 
     /* Number of 32-bit block pointers in a block */
@@ -367,18 +372,23 @@ void print_dir_entries(int img_fd, struct ext2_super_block *sb,
     int num_entries = (block_size * 8) / 32;
 
     inode_table = grp->bg_inode_table;
-    inodes_in_group = sb->s_inodes_per_group;
+    inodes_in_group = sb->s_inodes_count;
 
     int table_offset = get_offset(inode_table, block_size);
     pread(img_fd, table, sizeof(table), table_offset);
 
     for (int j = 0; j < inodes_in_group; j++) {
-        int inode_id = j; 
+        int inode_id = j + 1; 
         struct ext2_inode *inode_entry = &table[j];
         if (S_ISDIR(inode_entry->i_mode)) {
             int lbo = 0;
             for (int k = 0; k < 15; k++) {
                 int ptr = inode_entry->i_block[k];
+
+                if (ptr == 0) {
+                    break;
+                }
+
                 if (k < 12) {
                     scan_dir(img_fd, ptr, block_size, inode_id, lbo);
                     lbo++;
