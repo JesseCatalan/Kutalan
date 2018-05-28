@@ -6,6 +6,14 @@ ID: 204785152,704827423
 Included Files
 --------------
 
+lab3a.c: Source code implementation of file system analysis program.
+
+ext2_fs.h: Header file describing the EXT2 file system format.
+
+Makefile: Build executable lab3a, build tarball for distribution, clean files created by Makefile.
+
+README: Identification information, included files, sources.
+
 --------------
 Sources
 --------------
