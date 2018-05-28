@@ -22,60 +22,6 @@ int get_offset(int block_id, int block_size) {
     return offset;
 }
 
-/* Convert ctime time format into desired format:
- * Www Mmm dd hh:mm:ss yyyy\n [ctime format]
- * mm/dd/yy hh:mm:ss [desired format]
- */
-char *set_time(char *time) {
-    /* NOTE: Each string is size+1 to allow for the null byte */
-    int month;
-    char month_s[4];
-    char day_s[3];
-    char year_s[3];
-    char hour_s[3];
-    char minute_s[3];
-    char second_s[3];
-
-    snprintf(month_s, 4, "%s", &time[4]);
-    snprintf(day_s, 3, "%s", &time[8]);
-    snprintf(year_s, 3, "%s", &time[22]);
-    snprintf(hour_s, 3, "%s", &time[11]);
-    snprintf(minute_s, 3, "%s", &time[14]);
-    snprintf(second_s, 3, "%s", &time[17]);
-
-    if (strcmp(month_s, "Jan") == 0) {
-        month = 1;
-    } else if (strcmp(month_s, "Feb") == 0) {
-        month = 2;
-    } else if (strcmp(month_s, "Mar") == 0) {
-        month = 3;
-    } else if (strcmp(month_s, "Apr") == 0) {
-        month = 4;
-    } else if (strcmp(month_s, "May") == 0) {
-        month = 5;
-    } else if (strcmp(month_s, "Jun") == 0) {
-        month = 6;
-    } else if (strcmp(month_s, "Jul") == 0) {
-        month = 7;
-    } else if (strcmp(month_s, "Aug") == 0) {
-        month = 8;
-    } else if (strcmp(month_s, "Sep") == 0) {
-        month = 9;
-    } else if (strcmp(month_s, "Oct") == 0) {
-        month = 10;
-    } else if (strcmp(month_s, "Nov") == 0) {
-        month = 11;
-    } else if (strcmp(month_s, "Dec") == 0) {
-        month = 12;
-    }
-
-    char *return_string = malloc(sizeof(char) * 18);
-    snprintf(return_string, 18, "%02d/%02d/%02d %02d:%02d:%02d", month, atoi(day_s), atoi(year_s), atoi(hour_s),
-            atoi(minute_s), atoi(second_s));
-
-    return return_string;
-}
-
 /* Print summary of superblock:
  * SUPERBLOCK
  * total number of blocks (decimal)
@@ -257,21 +203,31 @@ void print_inode_summary(int img_fd, struct ext2_super_block *sb,
             int owner = table[j].i_uid;
             int group = table[j].i_gid;
             int link_count = table[j].i_links_count;
+
+            struct tm *c_time_info;
             time_t c_time = table[j].i_ctime;
-            char *c_time_string = ctime(&c_time);
-            char *fmtd_c_time = set_time(c_time_string);
+            char c_time_buf[64];
+            c_time_info = gmtime(&c_time);
+            strftime(c_time_buf, 64, "%x %X", c_time_info);
+
+            struct tm *m_time_info;
             time_t m_time = table[j].i_mtime;
-            char *m_time_string = ctime(&m_time);
-            char *fmtd_m_time = set_time(m_time_string);
+            char m_time_buf[64];
+            m_time_info = gmtime(&m_time);
+            strftime(m_time_buf, 64, "%x %X", m_time_info);
+
+            struct tm *a_time_info;
             time_t a_time = table[j].i_atime;
-            char *a_time_string = ctime(&a_time);
-            char *fmtd_a_time = set_time(a_time_string);
+            char a_time_buf[64];
+            a_time_info = gmtime(&a_time);
+            strftime(a_time_buf, 64, "%x %X", a_time_info);
+
             int file_size = table[j].i_size;
             int num_blocks = table[j].i_blocks;
 
             printf("INODE,%d,%c,%o,%d,%d,%d,%s,%s,%s,%d,%d",
                     inode_id, file_type, mode, owner, group, link_count,
-                    fmtd_c_time, fmtd_m_time, fmtd_a_time, file_size, num_blocks);
+                    c_time_buf, m_time_buf, a_time_buf, file_size, num_blocks);
 
             if (file_type == 'f' || file_type == 'd' || file_type == 's') {
                 if (file_type == 's' && file_size < 60) {
@@ -287,10 +243,6 @@ void print_inode_summary(int img_fd, struct ext2_super_block *sb,
             }
 
             printf("\n");
-
-            free(fmtd_c_time);
-            free(fmtd_m_time);
-            free(fmtd_a_time);
         }
     }
 }
