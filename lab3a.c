@@ -372,6 +372,7 @@ void visit_indirect_refs(int level_current, int block_id,
 
     int *ptr = (int *) block;
 
+
     if (level_current == 1) {
         for (int i = 0; i < num_entries; i++) {
             if (*ptr) {
@@ -385,11 +386,12 @@ void visit_indirect_refs(int level_current, int block_id,
     }
     
     for (int i = 0; i < num_entries; i++) {
-        if (*ptr) {
-            printf("INDIRECT,%d,%d,%d,%d,%d\n",
-                    inode_id, level_current, lbo,
-                    block_id, *ptr);
+        if (*ptr == 0) {
+            return;
         }
+        printf("INDIRECT,%d,%d,%d,%d,%d\n",
+                inode_id, level_current, lbo,
+                block_id, *ptr);
         visit_indirect_refs(level_current - 1, *ptr, block_size,
                 num_entries, img_fd, inode_id, lbo);
         lbo += num_entries;
@@ -456,7 +458,7 @@ int main(int argc, char *argv[]) {
     int img_fd = open(img_name, O_RDONLY);
     if (img_fd == -1) {
         fprintf(stderr, "%s is a nonexistent file!\n", img_name);
-        exit(2);
+        exit(1);
     }
 
     struct ext2_super_block sb;
