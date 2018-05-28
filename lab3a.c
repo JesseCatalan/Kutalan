@@ -423,8 +423,8 @@ void visit_indirect_refs(int level_current, int level_original, int block_id,
     if (level_current == 1) {
         for (int i = 0; i < num_entries; i++) {
             if (*ptr) {
-                printf("INDIRECT,%d,%d,%d,%d,%d",
-                        inode_id, level_original, lbo + i,
+                printf("INDIRECT,%d,%d,%d,%d,%d\n",
+                        inode_id, level_current, lbo + i,
                         block_id, *ptr);
             }
             ptr++;
@@ -434,8 +434,8 @@ void visit_indirect_refs(int level_current, int level_original, int block_id,
     
     for (int i = 0; i < num_entries; i++) {
         if (*ptr) {
-            printf("INDIRECT,%d,%d,%d,%d,%d",
-                    inode_id, level_original, lbo,
+            printf("INDIRECT,%d,%d,%d,%d,%d\n",
+                    inode_id, level_current, lbo,
                     block_id, *ptr);
         }
         visit_indirect_refs(level_current - 1, level_original, *ptr, block_size,
@@ -471,7 +471,7 @@ void print_indirect_block_refs(int img_fd, struct ext2_super_block *sb,
     pread(img_fd, table, sizeof(table), table_offset);
 
     for (int j = 0; j < inodes_in_group; j++) {
-        int inode_id = j; 
+        int inode_id = j + 1;
         struct ext2_inode *inode_entry = &table[j];
         int lbo = 12;
         if (S_ISDIR(inode_entry->i_mode) || S_ISREG(inode_entry->i_mode)) {
@@ -532,9 +532,7 @@ int main(int argc, char *argv[]) {
 
     print_dir_entries(img_fd, &sb, &grp);
 
-    /*
     print_indirect_block_refs(img_fd, &sb, &grp);
-    */
 
     exit(0);
 }
