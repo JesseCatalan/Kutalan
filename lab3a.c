@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <math.h>
+#include <time.h>
 #include "ext2_fs.h"
 
 #define SUPER_BLOCK_OFFSET 1024
@@ -16,6 +17,60 @@ int get_offset(int block_id, int block_size) {
     int offset = SUPER_BLOCK_OFFSET + (block_id - 1) * block_size;
 
     return offset;
+}
+
+/* Convert ctime time format into desired format:
+ * Www Mmm dd hh:mm:ss yyyy\n [ctime format]
+ * mm/dd/yy hh:mm:ss [desired format]
+ */
+char *set_time(char *time) {
+    /* NOTE: Each string is size+1 to allow for the null byte */
+    int month;
+    char month_s[4];
+    char day_s[3];
+    char year_s[3];
+    char hour_s[3];
+    char minute_s[3];
+    char second_s[3];
+
+    snprintf(month_s, 4, "%s", &time[4]);
+    snprintf(day_s, 3, "%s", &time[8]);
+    snprintf(year_s, 3, "%s", &time[22]);
+    snprintf(hour_s, 3, "%s", &time[11]);
+    snprintf(minute_s, 3, "%s", &time[14]);
+    snprintf(second_s, 3, "%s", &time[17]);
+
+    if (strcmp(month_s, "Jan") == 0) {
+        month = 1;
+    } else if (strcmp(month_s, "Feb") == 0) {
+        month = 2;
+    } else if (strcmp(month_s, "Mar") == 0) {
+        month = 3;
+    } else if (strcmp(month_s, "Apr") == 0) {
+        month = 4;
+    } else if (strcmp(month_s, "May") == 0) {
+        month = 5;
+    } else if (strcmp(month_s, "Jun") == 0) {
+        month = 6;
+    } else if (strcmp(month_s, "Jul") == 0) {
+        month = 7;
+    } else if (strcmp(month_s, "Aug") == 0) {
+        month = 8;
+    } else if (strcmp(month_s, "Sep") == 0) {
+        month = 9;
+    } else if (strcmp(month_s, "Oct") == 0) {
+        month = 10;
+    } else if (strcmp(month_s, "Nov") == 0) {
+        month = 11;
+    } else if (strcmp(month_s, "Dec") == 0) {
+        month = 12;
+    }
+
+    char *return_string = malloc(sizeof(char) * 18);
+    snprintf(return_string, 18, "%02d/%02d/%02d %02d:%02d:%02d", month, atoi(day_s), atoi(year_s), atoi(hour_s),
+            atoi(minute_s), atoi(second_s));
+
+    return return_string;
 }
 
 /* Print summary of superblock:
@@ -125,7 +180,7 @@ void print_free_block_entries(int img_fd, struct ext2_super_block *sb, struct ex
     }
 }
 
-/* Print free inode summary for each group
+/* Print free inode entries
  * IFREE
  * number of the free I-node (decimal)
  */
@@ -158,9 +213,102 @@ void print_free_inode_entries(int img_fd, struct ext2_super_block *sb, struct ex
     }
 }
 
-void print_inode_summary(struct ext2_super_block *sb, struct ext2_group_desc grps[], int group_conut) {
-    // iterate through each valid corresponding inode and output its summary
-    // essentially the same thing as the print_free_inode_entries, except you calculate the position of the inode
+
+/* Print inode summary
+ * INODE
+ * inode number (decimal)
+ * file type ('f' for file, 'd' for directory, 's' for symbolic link, '?" for anything else)
+ * mode (low order 12-bits, octal ... suggested format "%o")
+ * owner (decimal)
+ * group (decimal)
+ * link count (decimal)
+ * time of last I-node change (mm/dd/yy hh:mm:ss, GMT)
+ * modification time (mm/dd/yy hh:mm:ss, GMT)
+ * time of last access (mm/dd/yy hh:mm:ss, GMT)
+ * file size (decimal)
+ * number of (512 byte) blocks of disk space (decimal) taken up by this file
+ */
+void print_inode_summary(int img_fd, struct ext2_super_block *sb, struct ext2_group_desc grps[], int group_count) {
+    int inode_bitmap;
+    int inodes_per_group;
+    int inode_table;
+    struct ext2_inode table[sb->s_inodes_per_group];
+    int block_size = EXT2_MIN_BLOCK_SIZE << sb->s_log_block_size;
+    int inodes_in_group;
+
+    for (int i = 0; i < group_count; i++) {
+        inode_bitmap = grps[i].bg_inode_bitmap;
+        inode_table = grps[i].bg_inode_table;
+        if (i != group_count -1 ) {
+            inodes_in_group = sb->s_inodes_per_group;
+        } else {
+            inodes_in_group = sb->s_inodes_count % sb->s_inodes_per_group;
+        }
+
+        int *bitmap = malloc(block_size);
+        int bitmap_offset = get_offset(inode_bitmap, block_size);
+        int table_offset = get_offset(inode_table, block_size);
+        pread(img_fd, bitmap, block_size, bitmap_offset);
+        pread(img_fd, table, sizeof(table), table_offset);
+
+        for (int j = 0; j < inodes_in_group; j++) {
+            if (table[j].i_mode && table[j].i_links_count) {
+                int inode_id = (i * sb->s_inodes_per_group) + j;
+                int file_type_mode = table[j].i_mode & 0xF000;
+                char file_type = '?';
+                switch (file_type_mode) {
+                    case 0x8000:
+                        file_type = 'f';
+                        break;
+                    case 0x4000:
+                        file_type = 'd';
+                        break;
+                    case 0xA000:
+                        file_type = 's';
+                        break;
+                    default:
+                        file_type = '?';
+                        break;
+                }
+                int mode = table[j].i_mode & 0x0FFF;
+                int owner = table[j].i_uid;
+                int group = table[j].i_gid;
+                int link_count = table[j].i_links_count;
+                time_t c_time = table[j].i_ctime;
+                char *c_time_string = ctime(&c_time);
+                char *fmtd_c_time = set_time(c_time_string);
+                time_t m_time = table[j].i_mtime;
+                char *m_time_string = ctime(&m_time);
+                char *fmtd_m_time = set_time(m_time_string);
+                time_t a_time = table[j].i_atime;
+                char *a_time = ctime(&a_time);
+                char *fmtd_a_time = set_time(a_time_string);
+                int file_size = table[j].i_size;
+                int num_blocks = table[j].i_blocks;
+
+                printf("INODE,%d,%d,%o,%d,%d,%d,%s,%s,%s", inode_id, file_type, mode, owner, group, link_count,
+                        fmtd_c_time, fmtd_m_time, fmtd_a_time);
+
+                if (file_type == 'f' || file_type == 'd' || file_type == 's') {
+                    if (file_type == 's') {
+                        if (file_size < 60) {
+                            break;
+                        }
+                    }
+
+                    for (int k = 0; k < num_blocks; k++) {
+                        printf(","); // print address if content != 0
+                    }
+                }
+
+                free(fmtd_c_time);
+                free(fmtd_m_time);
+                free(fmtd_a_time);
+            }
+        }
+
+        free(bitmap);
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -171,6 +319,10 @@ int main(int argc, char *argv[]) {
 
     char *img_name = argv[1];
     int img_fd = open(img_name, O_RDONLY);
+    if (img_fd == -1) {
+        fprintf(stderr, "%s is a nonexistent file!\n", img_name);
+        exit(3);
+    }
 
     struct ext2_super_block super_block;
     pread(img_fd, &super_block, sizeof(struct ext2_super_block), SUPER_BLOCK_OFFSET);
@@ -182,7 +334,7 @@ int main(int argc, char *argv[]) {
 
     struct ext2_group_desc grps[(int) group_count];
     int grp_desc_table_offset = get_offset(2, block_size);
-    pread(img_fd, grps, sizeof(struct ext2_group_desc) * group_count, grp_desc_table_offset);
+    pread(img_fd, grps, sizeof(grps), grp_desc_table_offset);
 
     /* Call print_group_summary */
 
