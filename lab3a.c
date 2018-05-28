@@ -11,6 +11,8 @@
 
 #define SUPER_BLOCK_OFFSET 1024
 
+/* We assume there is a single block group in the file system */
+
 int get_offset(int block_id, int block_size) {
     /* NOTE: Blocks are indexed starting from 1.
      * The initial block is reserved for the boot block.
@@ -153,23 +155,21 @@ void print_group_summary(struct ext2_super_block *sb, struct ext2_group_desc *gr
 void print_free_block_entries(int img_fd, struct ext2_super_block *sb,
         struct ext2_group_desc *grp) {
     int block_bitmap;
-    int blocks_in_group;
     int block_size = EXT2_MIN_BLOCK_SIZE << sb->s_log_block_size;
 
-
     block_bitmap = grp->bg_block_bitmap;
-    blocks_in_group = sb->s_blocks_count;
-
 
     unsigned char *bitmap = malloc(block_size);
     int offset = get_offset(block_bitmap, block_size);
     pread(img_fd, bitmap, block_size, offset);
 
-    for (int j = 0; j < blocks_in_group; j++) {
-        int is_allocated = *bitmap & (1 << j);
-        if (!is_allocated) {
-            int block_id = j;
-            printf("BFREE,%d\n", block_id);
+    for (int j = 0; j < block_size; j++) {
+        for (int i = 0; i < 8; i++) {
+            int is_allocated = bitmap[j] & (1 << i);
+            if (!is_allocated) {
+                int block_id = (j * 8) + (i + 1);
+                printf("BFREE,%d\n", block_id);
+            }
         }
     }
 
@@ -183,21 +183,23 @@ void print_free_block_entries(int img_fd, struct ext2_super_block *sb,
 void print_free_inode_entries(int img_fd, struct ext2_super_block *sb,
         struct ext2_group_desc *grp) {
     int inode_bitmap;
-    int inodes_in_group;
+    //int inodes_in_group;
     int block_size = EXT2_MIN_BLOCK_SIZE << sb->s_log_block_size;
 
     inode_bitmap = grp->bg_inode_bitmap;
-    inodes_in_group = sb->s_inodes_count;
+    //inodes_in_group = sb->s_inodes_count;
 
-    int *bitmap = malloc(block_size);
+    unsigned char *bitmap = malloc(block_size);
     int offset = get_offset(inode_bitmap, block_size);
     pread(img_fd, bitmap, block_size, offset);
 
-    for (int j = 0; j < inodes_in_group; j++) {
-        int is_allocated = *bitmap & (1 << j);
-        if (!is_allocated) {
-            int inode_id = j;
-            printf("IFREE,%d\n", inode_id);
+    for (int j = 0; j < block_size; j++) {
+        for (int i = 0; i < 8; i++) {
+            int is_allocated = bitmap[j] & (1 << i);
+            if (!is_allocated) {
+                int inode_id = (j * 8) + (i + 1);
+                printf("IFREE,%d\n", inode_id);
+            }
         }
     }
 
@@ -221,25 +223,20 @@ void print_free_inode_entries(int img_fd, struct ext2_super_block *sb,
  */
 void print_inode_summary(int img_fd, struct ext2_super_block *sb,
         struct ext2_group_desc *grp) {
-    int inode_bitmap;
     int inode_table;
-    struct ext2_inode table[sb->s_inodes_per_group];
+    struct ext2_inode table[sb->s_inodes_count];
     int block_size = EXT2_MIN_BLOCK_SIZE << sb->s_log_block_size;
     int inodes_in_group;
 
-    inode_bitmap = grp->bg_inode_bitmap;
     inode_table = grp->bg_inode_table;
-    inodes_in_group = sb->s_inodes_per_group;
+    inodes_in_group = sb->s_inodes_count;
 
-    int *bitmap = malloc(block_size);
-    int bitmap_offset = get_offset(inode_bitmap, block_size);
     int table_offset = get_offset(inode_table, block_size);
-    pread(img_fd, bitmap, block_size, bitmap_offset);
     pread(img_fd, table, sizeof(table), table_offset);
 
     for (int j = 0; j < inodes_in_group; j++) {
         if (table[j].i_mode && table[j].i_links_count) {
-            int inode_id = j;
+            int inode_id = j + 1;
             int file_type_mode = table[j].i_mode & 0xF000;
             char file_type = '?';
             switch (file_type_mode) {
@@ -272,7 +269,7 @@ void print_inode_summary(int img_fd, struct ext2_super_block *sb,
             int file_size = table[j].i_size;
             int num_blocks = table[j].i_blocks;
 
-            printf("INODE,%d,%d,%o,%d,%d,%d,%s,%s,%s,%d,%d",
+            printf("INODE,%d,%c,%o,%d,%d,%d,%s,%s,%s,%d,%d",
                     inode_id, file_type, mode, owner, group, link_count,
                     fmtd_c_time, fmtd_m_time, fmtd_a_time, file_size, num_blocks);
 
@@ -296,8 +293,6 @@ void print_inode_summary(int img_fd, struct ext2_super_block *sb,
             free(fmtd_a_time);
         }
     }
-
-    free(bitmap);
 }
 
 /* Iterate through directory entries of a data block */
@@ -520,14 +515,14 @@ int main(int argc, char *argv[]) {
     print_group_summary(&sb, &grp);
 
     print_free_block_entries(img_fd, &sb, &grp);
-    /*
 
     print_free_inode_entries(img_fd, &sb, &grp);
 
     print_inode_summary(img_fd, &sb, &grp);
-    
+
     print_dir_entries(img_fd, &sb, &grp);
 
+    /*
     print_indirect_block_refs(img_fd, &sb, &grp);
     */
 
