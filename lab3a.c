@@ -229,9 +229,9 @@ void print_free_inode_entries(int img_fd, struct ext2_super_block *sb, struct ex
  * file size (decimal)
  * number of (512 byte) blocks of disk space (decimal) taken up by this file
  */
-void print_inode_summary(int img_fd, struct ext2_super_block *sb, struct ext2_group_desc grps[], int group_count) {
+void print_inode_summary(int img_fd, struct ext2_super_block *sb,
+        struct ext2_group_desc grps[], int group_count) {
     int inode_bitmap;
-    int inodes_per_group;
     int inode_table;
     struct ext2_inode table[sb->s_inodes_per_group];
     int block_size = EXT2_MIN_BLOCK_SIZE << sb->s_log_block_size;
@@ -287,20 +287,24 @@ void print_inode_summary(int img_fd, struct ext2_super_block *sb, struct ext2_gr
                 int file_size = table[j].i_size;
                 int num_blocks = table[j].i_blocks;
 
-                printf("INODE,%d,%d,%o,%d,%d,%d,%s,%s,%s", inode_id, file_type, mode, owner, group, link_count,
-                        fmtd_c_time, fmtd_m_time, fmtd_a_time);
+                printf("INODE,%d,%d,%o,%d,%d,%d,%s,%s,%s,%d,%d",
+                        inode_id, file_type, mode, owner, group, link_count,
+                        fmtd_c_time, fmtd_m_time, fmtd_a_time, file_size, num_blocks);
 
                 if (file_type == 'f' || file_type == 'd' || file_type == 's') {
-                    if (file_type == 's') {
-                        if (file_size < 60) {
-                            break;
-                        }
+                    if (file_type == 's' && file_size < 60) {
+                        ; // do nothing
                     }
 
-                    for (int k = 0; k < num_blocks; k++) {
-                        printf(","); // print address if content != 0
+                    else {
+                        for (int k = 0; k < 15; k++) {
+                            int ptr = table[j].i_block[k];
+                            printf(",%d", ptr);
+                        }
                     }
                 }
+
+                printf("\n");
 
                 free(fmtd_c_time);
                 free(fmtd_m_time);
@@ -525,22 +529,36 @@ int main(int argc, char *argv[]) {
     int img_fd = open(img_name, O_RDONLY);
     if (img_fd == -1) {
         fprintf(stderr, "%s is a nonexistent file!\n", img_name);
-        exit(3);
+        exit(2);
     }
 
-    struct ext2_super_block super_block;
-    pread(img_fd, &super_block, sizeof(struct ext2_super_block), SUPER_BLOCK_OFFSET);
+    struct ext2_super_block sb;
+    pread(img_fd, &sb, sizeof(struct ext2_super_block), SUPER_BLOCK_OFFSET);
 
-    /* Call print_superblock_summary */
+    int block_size = sb.s_log_block_size;
+    int group_count = (int) ceil((double) sb.s_blocks_count / (double) sb.s_blocks_per_group);
 
-    int block_size = super_block.s_log_block_size;
-    double group_count = ceil((double) super_block.s_blocks_count / (double) super_block.s_blocks_per_group);
-
-    struct ext2_group_desc grps[(int) group_count];
+    struct ext2_group_desc grps[group_count];
     int grp_desc_table_offset = get_offset(2, block_size);
     pread(img_fd, grps, sizeof(grps), grp_desc_table_offset);
 
-    /* Call print_group_summary */
-
+    int rc = print_superblock_summary(&sb);
+    if (rc == -1) {
+        fprintf(stderr, "Corrupted file system!\n");
+        exit(2);
+    }
     
+    print_group_summary(&sb, grps, group_count);
+
+    print_free_block_entries(img_fd, &sb, grps, group_count);
+
+    print_free_inode_entries(img_fd, &sb, grps, group_count);
+
+    print_inode_summary(img_fd, &sb, grps, group_count);
+    
+    print_dir_entries(img_fd, &sb, grps, group_count);
+
+    print_indirect_block_refs(img_fd, &sb, grps, group_count);
+
+    exit(0);
 }
