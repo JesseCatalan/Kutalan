@@ -411,7 +411,7 @@ void print_dir_entries(int img_fd, struct ext2_super_block *sb,
 }
 
 /* Visit indirect blocks */
-void visit_indirect_refs(int level_current, int level_original, int block_id,
+void visit_indirect_refs(int level_current, int block_id,
             int block_size, int num_entries, int img_fd,
             int inode_id, int lbo) {
     char block[block_size];
@@ -438,7 +438,7 @@ void visit_indirect_refs(int level_current, int level_original, int block_id,
                     inode_id, level_current, lbo,
                     block_id, *ptr);
         }
-        visit_indirect_refs(level_current - 1, level_original, *ptr, block_size,
+        visit_indirect_refs(level_current - 1, *ptr, block_size,
                 num_entries, img_fd, inode_id, lbo);
         lbo += num_entries;
         ptr++;
@@ -476,17 +476,17 @@ void print_indirect_block_refs(int img_fd, struct ext2_super_block *sb,
         int lbo = 12;
         if (S_ISDIR(inode_entry->i_mode) || S_ISREG(inode_entry->i_mode)) {
             /* Scan indirect blocks */ 
-            visit_indirect_refs(1, 1, inode_entry->i_block[12], block_size,
+            visit_indirect_refs(1, inode_entry->i_block[12], block_size,
                     num_entries, img_fd, inode_id, lbo);
             lbo += num_entries;
 
             /* Scan double indirect blocks */
-            visit_indirect_refs(2, 2, inode_entry->i_block[13], block_size,
+            visit_indirect_refs(2, inode_entry->i_block[13], block_size,
                     num_entries, img_fd, inode_id, lbo);
             lbo += num_entries * num_entries;
 
             /* Scan triple indirect blocks */
-            visit_indirect_refs(3, 3, inode_entry->i_block[14], block_size,
+            visit_indirect_refs(3, inode_entry->i_block[14], block_size,
                     num_entries, img_fd, inode_id, lbo);
             lbo += num_entries * num_entries * num_entries;
         }
