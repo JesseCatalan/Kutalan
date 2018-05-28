@@ -311,8 +311,9 @@ void scan_dir(int img_fd, int block_id, int block_size, int inode_id, int lbo) {
             name[name_len] = '\0';
 
             printf("DIRENT,%d,%d,%d,%d,%d,'%s'\n",
-                    inode_id, lbo, dirent->inode,
+                    inode_id, size + lbo * block_size, dirent->inode,
                     dirent->rec_len, name_len, name);
+            size += dirent->rec_len;
         }
 
         dirent = (void *) dirent + dirent->rec_len;
@@ -321,7 +322,6 @@ void scan_dir(int img_fd, int block_id, int block_size, int inode_id, int lbo) {
             break;
         }
 
-        size += dirent->rec_len;
     }
 
 }
