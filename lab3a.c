@@ -347,7 +347,7 @@ void print_dir_entries(int img_fd, struct ext2_super_block *sb,
                 int ptr = inode_entry->i_block[k];
 
                 if (ptr == 0) {
-                    break;
+                    continue;
                 }
 
                 if (k < 12) {
@@ -396,7 +396,7 @@ void visit_indirect_refs(int level_current, int block_id,
     
     for (int i = 0; i < num_entries; i++) {
         if (*ptr == 0) {
-            return;
+            continue;
         }
         printf("INDIRECT,%d,%d,%d,%d,%d\n",
                 inode_id, level_current, lbo,
