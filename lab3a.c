@@ -236,7 +236,11 @@ void print_inode_summary(int img_fd, struct ext2_super_block *sb,
 
             if (file_type == 'f' || file_type == 'd' || file_type == 's') {
                 if (file_type == 's' && file_size < 60) {
-                    ; // do nothing
+                    /* NOTE: This is value does not represent a valid block but the first
+                     * four bytes of the file name the symlink points to. Print this to
+                     * match the trivial.csv format.
+                     */
+                    printf(",%d", table[j].i_block[0]);
                 }
 
                 else {
