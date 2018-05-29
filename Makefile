@@ -1,3 +1,8 @@
+# NAME: Jesse Catalan,Ricardo Kumchimpos
+# EMAIL: jessecatalan77@gmail.com,rkuchimpos@gmail.com
+# ID: 204785152,704827423
+
+
 lab3a: lab3a.c ext2_fs.h
 	gcc -o lab3a -Wall -Wextra lab3a.c -lm
 

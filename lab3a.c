@@ -1,3 +1,8 @@
+/* NAME: Jesse Catalan,Ricardo Kumchimpos
+ * EMAIL: jessecatalan77@gmail.com,rkuchimpos@gmail.com
+ * ID: 204785152,704827423
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
